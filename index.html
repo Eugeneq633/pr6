@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Зимовий мікс — SPA</title>
+<style>
+:root{--bg:#0c262e;--panel:#12353f;--ink:#f1ece0;--muted:#9db7b8;--accent:#f0be50;--line:#25505c;}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:Georgia,"Times New Roman",serif;line-height:1.6;min-height:100vh}
+:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+.is-hidden{display:none !important}
+
+/* Статична частина: header зі станом (аудіо, таймер) не перезавантажується при навігації */
+.site-header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--line);
+  display:grid;grid-template-columns:auto 1fr;grid-template-areas:"brand player" "nav nav";gap:.5rem 1.5rem;
+  padding:.75rem 1.5rem;align-items:center}
+.brand{grid-area:brand;display:flex;align-items:center;gap:.6rem}
+.brand svg{width:34px;height:34px}
+.player{grid-area:player;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;justify-content:flex-end}
+.player audio{flex:1;min-width:200px;max-width:420px}
+.player small{color:var(--muted)}
+#nowPlaying{max-width:22ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+nav{grid-area:nav}
+nav ul{list-style:none;padding:0;display:flex;gap:.5rem;flex-wrap:wrap}
+nav a{display:inline-block;padding:.45rem 1rem;border:1px solid transparent;border-radius:999px;color:var(--ink);text-decoration:none;
+  transition:background .25s,color .25s,border-color .25s}
+nav a:hover{border-color:var(--accent)}
+nav a[aria-current="page"]{background:var(--accent);color:var(--bg)}
+
+main{max-width:1000px;margin:0 auto;padding:2rem 1.5rem 3rem}
+section h1{font-size:clamp(2rem,5vw,3.2rem);font-weight:400;line-height:1.1;margin-bottom:1rem}
+section h1:focus{outline:none}
+.muted{color:var(--muted)}
+.catalog{display:grid;grid-template-columns:minmax(220px,360px) 1fr;gap:2rem 3rem;align-items:start}
+.catalog h1,.catalog .tracks{grid-column:1 / -1}
+.cover{position:relative}
+.cover img{width:100%;height:auto;display:block;border-radius:4px;position:relative;z-index:1;box-shadow:0 18px 40px rgba(0,0,0,.45)}
+.vinyl{position:absolute;top:6%;right:-18%;width:86%;aspect-ratio:1;border-radius:50%;
+  background:
+    radial-gradient(circle,#fff 0 3%,var(--accent) 4% 15%,transparent 16%),
+    repeating-radial-gradient(circle,rgba(120,80,0,.10) 0 1px,transparent 1px 6px),
+    conic-gradient(#fffaf0,#f7d774,#fffaf0,#f0be50,#fffaf0,#f7d774,#fffaf0,#f0be50,#fffaf0);
+  box-shadow:inset 0 0 0 5px #e0a93a;animation:spin 6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tracks{overflow-x:auto}
+table{width:100%;border-collapse:collapse;min-width:380px}
+caption{text-align:left;font-size:1.3rem;padding-bottom:.5rem}
+th,td{padding:.65rem .9rem;text-align:left;border-bottom:1px solid var(--line)}
+thead th{color:var(--muted);font-weight:400;border-bottom:2px solid var(--accent)}
+tbody tr{transition:background .25s}tbody tr:hover{background:var(--panel)}
+.track{font:inherit;color:var(--ink);background:none;border:0;padding:0;cursor:pointer;text-align:left;transition:color .25s}
+.track:hover{color:var(--accent)}
+tr.is-current td{color:var(--accent)}
+tr.is-current .track{color:var(--accent)}
+tfoot td{color:var(--muted);border-bottom:0}
+.about p{max-width:60ch;margin-bottom:1rem}
+.about dl{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1.5rem;max-width:60ch}
+.about dt{color:var(--accent)}
+form{display:grid;gap:1rem;max-width:480px}
+label{display:grid;gap:.3rem}
+input,textarea{font:inherit;padding:.6rem .8rem;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink)}
+.btn{justify-self:start;padding:.7rem 1.4rem;border:1px solid var(--accent);border-radius:999px;background:transparent;color:var(--ink);font:inherit;cursor:pointer;
+  transition:background .25s,color .25s,transform .25s}
+.btn:hover{background:var(--accent);color:var(--bg);transform:scale(1.05)}
+#formStatus{color:var(--accent);min-height:1.6em}
+
+/* ---- Screen States (ПР6) ---- */
+.toolbar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-bottom:1rem}
+.toolbar .label{color:var(--muted);margin-right:.25rem}
+.btn-small{padding:.4rem .9rem;font-size:.95rem}
+.btn-small[aria-pressed="true"]{background:var(--accent);color:var(--bg)}
+.filter{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end;margin-bottom:1.5rem}
+.filter label{min-width:220px}
+.state{min-height:240px}
+.cards{list-style:none;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:1rem}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;display:grid;transition:transform .25s,border-color .25s}
+.card:hover{transform:translateY(-3px);border-color:var(--accent)}
+.card img{width:100%;aspect-ratio:1;object-fit:cover;display:block}
+.card-body{padding:.8rem 1rem;display:grid;gap:.5rem}
+.card-body h2{font-size:1.05rem;font-weight:400;line-height:1.3}
+.card-body .meta{color:var(--muted);font-size:.9rem}
+.btn-danger{border-color:#e07a6a}
+.btn-danger:hover{background:#e07a6a;color:var(--bg)}
+.skeleton{background:linear-gradient(90deg,var(--panel) 25%,var(--line) 50%,var(--panel) 75%);background-size:200% 100%;
+  animation:shimmer 1.4s ease-in-out infinite;border-radius:8px}
+@keyframes shimmer{from{background-position:200% 0}to{background-position:-200% 0}}
+.skeleton-card{height:300px}
+.message{display:grid;justify-items:center;text-align:center;gap:.75rem;padding:2rem 1rem}
+.message svg{width:72px;height:72px;fill:none;stroke:var(--accent);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.message .btn{justify-self:center}
+.message h2{font-weight:400;font-size:1.5rem}
+.message p{color:var(--muted);max-width:44ch}
+.message .code{font-family:monospace;color:#e07a6a}
+.msg-error svg{stroke:#e07a6a}
+@media(max-width:720px){.catalog{grid-template-columns:1fr}.cover{margin-right:8%}.site-header{grid-template-areas:"brand" "player" "nav"}.player{justify-content:flex-start}}
+@media(prefers-reduced-motion:reduce){.vinyl,.skeleton{animation:none}.card{transition:none}}
+</style>
+</head>
+<body>
+<header class="site-header">
+  <div class="brand">
+    <svg viewBox="0 0 48 48" role="img" aria-label="Логотип"><circle cx="24" cy="24" r="22" fill="none" stroke="#f0be50" stroke-width="3"/><path d="M30 10a15 15 0 1 0 0 28 12 12 0 1 1 0-28z" fill="#f0be50"/></svg>
+    <strong>Зимовий мікс</strong>
+  </div>
+  <!-- State Monitor: аудіоплеєр і таймер сесії -->
+  <div class="player">
+    <audio id="audio" controls preload="none"></audio>
+    <small id="nowPlaying">Трек не вибрано</small>
+    <small>Сесія: <span id="timer">00:00</span></small>
+  </div>
+  <nav aria-label="Основна навігація">
+    <ul>
+      <li><a href="#catalog">Каталог</a></li>
+      <li><a href="#details">Про проєкт</a></li>
+      <li><a href="#library">Медіатека</a></li>
+      <li><a href="#feedback">Зворотний зв'язок</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main>
+  <section id="catalog" class="catalog" data-title="Каталог">
+    <h1 tabindex="-1">Каталог</h1>
+    <figure class="cover">
+      <span class="vinyl" aria-hidden="true"></span>
+      <img id="coverImg" src="cover-1-800.webp" srcset="cover-1-400.webp 400w, cover-1-800.webp 800w"
+           sizes="(max-width:720px) 80vw, 360px" width="800" height="800" loading="lazy" alt="Обкладинка: жовтий міньйон на засніженому озері">
+    </figure>
+    <p class="muted">Чотири треки. Натисніть на назву в треклисті, щоб увімкнути її, а потім перемикайте розділи: музика не перерветься.</p>
+    <div class="tracks">
+      <table>
+        <caption>Треклист</caption>
+        <thead><tr><th scope="col">№</th><th scope="col">Назва</th><th scope="col">Тривалість</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><button class="track" type="button" data-src="love-u.mp3" data-cover="cover-1" data-alt="Обкладинка треку LOVE U: жовтий міньйон на засніженому озері">LOVE U babby sweat boyyyyy</button></td><td>0:28</td></tr>
+          <tr><td>2</td><td><button class="track" type="button" data-src="pilizia.mp3" data-cover="cover-2" data-alt="Обкладинка треку PILIZIA: бабуся за ноутбуком">PILIZIA</button></td><td>0:11</td></tr>
+          <tr><td>3</td><td><button class="track" type="button" data-src="motivation.mp3" data-cover="cover-3" data-alt="Обкладинка треку MOTIVATION: чоловік у темних обладунках на тлі затемнення">MOTIVATION</button></td><td>0:25</td></tr>
+          <tr><td>4</td><td><button class="track" type="button" data-src="sad-ded-inside-style.mp3" data-cover="cover-4" data-alt="Обкладинка треку SAD DED INSIDE STYLE: малюнок аніме-героя з плащем">SAD DED INSIDE STYLE</button></td><td>0:34</td></tr>
+        </tbody>
+        <tfoot><tr><td colspan="2">Загальна тривалість</td><td>1:38</td></tr></tfoot>
+      </table>
+    </div>
+  </section>
+
+  <section id="details" class="about is-hidden" data-title="Про проєкт">
+    <h1 tabindex="-1">Про проєкт</h1>
+    <p>Навчальна SPA без бібліотек: усі три розділи лежать в одному HTML-документі, а JavaScript керує тим, який з них видно.</p>
+    <dl>
+      <dt>Маршрутизація</dt><dd>хеш-адреси та подія hashchange</dd>
+      <dt>Стан</dt><dd>аудіоплеєр і таймер у header не перезавантажуються</dd>
+      <dt>Мережа</dt><dd>жодних нових Doc-запитів при переходах</dd>
+    </dl>
+  </section>
+
+  <section id="library" class="is-hidden" data-title="Медіатека">
+    <h1 tabindex="-1">Медіатека</h1>
+
+    <!-- Панель тестування станів (State Switcher) -->
+    <div class="toolbar" role="group" aria-label="Перемикач станів екрана">
+      <span class="label">Стан екрана:</span>
+      <button class="btn btn-small" type="button" data-switch="content" aria-pressed="true">Дані</button>
+      <button class="btn btn-small" type="button" data-switch="loading" aria-pressed="false">Завантаження</button>
+      <button class="btn btn-small" type="button" data-switch="empty" aria-pressed="false">Порожній</button>
+      <button class="btn btn-small" type="button" data-switch="error" aria-pressed="false">Помилка</button>
+    </div>
+
+    <div class="filter">
+      <label>Пошук за назвою <input type="search" id="libraryFilter" autocomplete="off" placeholder="Наприклад, MOTIVATION"></label>
+      <button class="btn" type="button" id="refreshBtn">Оновити</button>
+    </div>
+
+    <div class="state" data-state="loading" aria-busy="true">
+      <ul class="cards" aria-label="Завантаження">
+        <li class="skeleton skeleton-card"></li>
+        <li class="skeleton skeleton-card"></li>
+        <li class="skeleton skeleton-card"></li>
+        <li class="skeleton skeleton-card"></li>
+      </ul>
+    </div>
+
+    <div class="state is-hidden" data-state="content">
+      <ul class="cards" id="cardList"></ul>
+    </div>
+
+    <div class="state is-hidden" data-state="empty">
+      <div class="message">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/><path d="M5 5l14 14"/></svg>
+        <h2>Нічого не знайдено</h2>
+        <p>У медіатеці немає треків за цим запитом, або всі треки видалено.</p>
+        <button class="btn" type="button" id="resetBtn">Скинути фільтри й відновити список</button>
+      </div>
+    </div>
+
+    <div class="state is-hidden" data-state="error">
+      <div class="message msg-error" role="alert">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2L12 3z"/><path d="M12 10v5"/><path d="M12 18h.01"/></svg>
+        <h2>Не вдалося завантажити медіатеку</h2>
+        <p class="code">Помилка 503: сервер тимчасово недоступний</p>
+        <button class="btn" type="button" id="retryBtn">Повторити спробу</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="feedback" class="is-hidden" data-title="Зворотний зв'язок">
+    <h1 tabindex="-1">Зворотний зв'язок</h1>
+    <form id="feedbackForm" novalidate>
+      <label>Ім'я <input type="text" name="name" required autocomplete="name"></label>
+      <label>Електронна пошта <input type="email" name="email" required autocomplete="email"></label>
+      <label>Повідомлення <textarea name="message" rows="4" required></textarea></label>
+      <button class="btn" type="submit">Надіслати</button>
+      <p id="formStatus" role="status"></p>
+    </form>
+  </section>
+</main>
+
+<script>
+(() => {
+  const ROUTES = ['catalog', 'details', 'library', 'feedback'];
+  const DEFAULT_ROUTE = 'catalog';
+  const sections = document.querySelectorAll('main > section');
+  const links = document.querySelectorAll('nav a');
+
+  // Підхід А: хеш-маршрутизація. Показуємо одну секцію, решту ховаємо класом.
+  function render() {
+    const hash = location.hash.slice(1);
+    const route = ROUTES.includes(hash) ? hash : DEFAULT_ROUTE;
+    sections.forEach(s => s.classList.toggle('is-hidden', s.id !== route));
+    links.forEach(a => {
+      if (a.getAttribute('href') === '#' + route) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    });
+    const active = document.getElementById(route);
+    document.title = active.dataset.title + ' — Зимовий мікс';
+    if (hash) active.querySelector('h1').focus({ preventScroll: true });
+    window.scrollTo(0, 0);
+  }
+  window.addEventListener('hashchange', render);
+  render();
+
+  // State Monitor: аудіо
+  const audio = document.getElementById('audio');
+  audio.addEventListener('play', () => document.body.classList.add('playing'));
+  ['pause', 'ended'].forEach(e => audio.addEventListener(e, () => document.body.classList.remove('playing')));
+
+
+  // Плейлист: клік по треку, автоперехід до наступного
+  const nowEl = document.getElementById('nowPlaying');
+  const coverImg = document.getElementById('coverImg');
+  const trackBtns = [...document.querySelectorAll('.track')];
+  let current = -1;
+  function playTrack(i) {
+    current = i;
+    const btn = trackBtns[i];
+    audio.src = btn.dataset.src;
+    const c = btn.dataset.cover;
+    coverImg.srcset = `${c}-400.webp 400w, ${c}-800.webp 800w`;
+    coverImg.src = `${c}-800.webp`;
+    coverImg.alt = btn.dataset.alt;
+    audio.play();
+    nowEl.textContent = btn.textContent;
+    document.querySelectorAll('tbody tr').forEach(tr => tr.classList.remove('is-current'));
+    btn.closest('tr').classList.add('is-current');
+  }
+  trackBtns.forEach((btn, i) => btn.addEventListener('click', () => playTrack(i)));
+  audio.addEventListener('ended', () => { if (current < trackBtns.length - 1) playTrack(current + 1); });
+
+  // State Monitor: таймер сесії на setInterval
+  const timerEl = document.getElementById('timer');
+  let seconds = 0;
+  window.setInterval(() => {
+    seconds++;
+    const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const s = String(seconds % 60).padStart(2, '0');
+    timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+
+  // ---- Screen States (ПР6) ----
+  const TRACKS = [
+    { id: 1, title: 'LOVE U babby sweat boyyyyy', time: '0:28', cover: 'cover-1-400.webp', alt: 'Міньйон на засніженому озері' },
+    { id: 2, title: 'PILIZIA', time: '0:11', cover: 'cover-2-400.webp', alt: 'Бабуся за ноутбуком' },
+    { id: 3, title: 'MOTIVATION', time: '0:25', cover: 'cover-3-400.webp', alt: 'Чоловік у темних обладунках' },
+    { id: 4, title: 'SAD DED INSIDE STYLE', time: '0:34', cover: 'cover-4-400.webp', alt: 'Малюнок аніме-героя з плащем' }
+  ];
+  let items = [...TRACKS];
+  let loadTimer = null;
+
+  const stateBlocks = document.querySelectorAll('[data-state]');
+  const switchBtns = document.querySelectorAll('[data-switch]');
+  const cardList = document.getElementById('cardList');
+  const filterInput = document.getElementById('libraryFilter');
+
+  // renderState: показує один блок, решту ховає класом .is-hidden
+  function renderState(name) {
+    stateBlocks.forEach(b => b.classList.toggle('is-hidden', b.dataset.state !== name));
+    switchBtns.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.switch === name)));
+  }
+
+  // Малюємо картки через DOM-API, без innerHTML
+  function renderCards() {
+    const q = filterInput.value.trim().toLowerCase();
+    const visible = items.filter(t => t.title.toLowerCase().includes(q));
+    cardList.replaceChildren();
+    visible.forEach(t => {
+      const li = document.createElement('li');
+      li.className = 'card';
+      const img = document.createElement('img');
+      img.src = t.cover; img.alt = t.alt; img.loading = 'lazy'; img.width = 400; img.height = 400;
+      const body = document.createElement('div');
+      body.className = 'card-body';
+      const h2 = document.createElement('h2'); h2.textContent = t.title;
+      const meta = document.createElement('span'); meta.className = 'meta'; meta.textContent = 'Тривалість ' + t.time;
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'btn btn-small btn-danger'; del.textContent = 'Видалити';
+      del.addEventListener('click', () => { items = items.filter(x => x.id !== t.id); showData(); });
+      body.append(h2, meta, del);
+      li.append(img, body);
+      cardList.append(li);
+    });
+    return visible.length;
+  }
+
+  // Природний перехід: немає елементів -> empty, інакше content
+  function showData() {
+    renderState(renderCards() > 0 ? 'content' : 'empty');
+  }
+
+  // Імітація асинхронного завантаження: loading 1.5-2 с, потім content
+  function load() {
+    window.clearTimeout(loadTimer);
+    renderState('loading');
+    loadTimer = window.setTimeout(showData, 1500 + Math.random() * 500);
+  }
+
+  switchBtns.forEach(b => b.addEventListener('click', () => {
+    window.clearTimeout(loadTimer);
+    const s = b.dataset.switch;
+    if (s === 'content') showData(); else renderState(s);
+  }));
+  document.getElementById('refreshBtn').addEventListener('click', load);
+  document.getElementById('retryBtn').addEventListener('click', load);
+  document.getElementById('resetBtn').addEventListener('click', () => {
+    items = [...TRACKS];
+    filterInput.value = '';
+    showData();
+  });
+  filterInput.addEventListener('input', showData);
+  showData();
+
+  // Форма: без перезавантаження сторінки
+  const form = document.getElementById('feedbackForm');
+  const status = document.getElementById('formStatus');
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    if (!form.checkValidity()) {
+      status.textContent = 'Заповніть усі поля та вкажіть коректну пошту.';
+      return;
+    }
+    status.textContent = `Дякуємо, ${form.elements.name.value}! Повідомлення прийнято.`;
+    form.reset();
+  });
+})();
+</script>
+</body>
+</html>
